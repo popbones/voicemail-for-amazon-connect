@@ -20,7 +20,6 @@ import com.amazonaws.kinesisvideo.parser.mkv.StreamingMkvReader;
 import com.amazonaws.kinesisvideo.parser.utilities.FragmentMetadataVisitor;
 import com.amazonaws.kvstream.*;
 import com.amazonaws.regions.Regions;
-import com.amazonaws.transcribe.TranscribeService;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,23 +41,16 @@ public class AudioStreamService {
     private static final String RECORDINGS_KEY_PREFIX = System.getenv("RECORDINGS_KEY_PREFIX");
     private static final boolean RECORDINGS_PUBLIC_READ_ACL = Boolean.parseBoolean(System.getenv("RECORDINGS_PUBLIC_READ_ACL"));
     private static final String START_SELECTOR_TYPE = System.getenv("START_SELECTOR_TYPE");
+    private static final boolean ENCRYPTION_ENABLED = Boolean.parseBoolean(System.getenv("ENCRYPTION_ENABLED"));
     private static final Logger logger = LoggerFactory.getLogger(AudioStreamService.class);
 
-    private TranscribeService transcribeService;
-    private ContactVoicemailRepo contactVoicemailRepo;
-
-    public AudioStreamService(TranscribeService transcribeService, ContactVoicemailRepo contactVoicemailRepo) {
-        this.transcribeService = transcribeService;
-        this.contactVoicemailRepo = contactVoicemailRepo;
+    public AudioStreamService() {
     }
 
-    public void processAudioStream(
-            String streamARN, String startFragmentNum, String agentId, String agentName, String contactId,
-            boolean transcribeEnabled, boolean encryptionEnabled, Optional<String> languageCode,
-            Optional<Boolean> saveCallRecording) throws Exception {
+    public void processAudioStream(String streamARN, String startFragmentNum, String contactId) throws Exception {
 
-        logger.info(String.format("StreamARN=%s, startFragmentNum=%s, contactId=%s" +
-                "transcribeEnabled=%s, encryptionEnabled=%s", streamARN, startFragmentNum, contactId, transcribeEnabled, encryptionEnabled));
+        logger.info(String.format("StreamARN=%s, startFragmentNum=%s, contactId=%s", streamARN, startFragmentNum,
+                contactId));
 
         long unixTime = System.currentTimeMillis() / 1000L;
         Path saveAudioFilePath = Paths.get("/tmp", contactId + "_" + unixTime + ".raw");
@@ -85,11 +77,8 @@ public class AudioStreamService {
             }
 
         } finally {
-            logger.info(String.format("Closing file and upload raw audio for contactId: %s ... %s Save Call Recording: %b", contactId, saveAudioFilePath, saveCallRecording));
-            closeFileAndUploadRawAudio(
-                    kvsInputStream, fileOutputStream, saveAudioFilePath, agentId, contactId,
-                    unixTime, saveCallRecording, transcribeEnabled, encryptionEnabled, languageCode.get()
-            );
+            logger.info(String.format("Closing file and upload raw audio for contactId: %s ...", contactId, saveAudioFilePath, contactId));
+            closeFileAndUploadRawAudio(kvsInputStream, fileOutputStream, saveAudioFilePath, contactId, unixTime);
         }
     }
 
@@ -99,35 +88,24 @@ public class AudioStreamService {
      * @param kvsInputStream
      * @param fileOutputStream
      * @param saveAudioFilePath
-     * @param saveCallRecording should the call recording be uploaded to S3?
      * @throws IOException
      */
     private void closeFileAndUploadRawAudio(InputStream kvsInputStream, FileOutputStream fileOutputStream,
-                                            Path saveAudioFilePath, String agentId, String contactId,
-                                            long unixTime, Optional<Boolean> saveCallRecording, boolean transcribeEnabled,
-                                            boolean encryptionEnabled, String languageCode) throws IOException {
+                                            Path saveAudioFilePath, String contactId,
+                                            long unixTime) throws IOException {
 
         kvsInputStream.close();
         fileOutputStream.close();
 
-        logger.info(String.format("Save call recording: %b", saveCallRecording));
+        logger.info("Save call recording...");
         logger.info(String.format("File size: %d", new File(saveAudioFilePath.toString()).length()));
 
         // Upload the Raw Audio file to S3
-        if ((saveCallRecording.orElse(false)) && (new File(saveAudioFilePath.toString()).length() > 0)) {
-            S3UploadInfo uploadInfo = AudioUtils.uploadRawAudio(REGION, RECORDINGS_BUCKET_NAME, RECORDINGS_KEY_PREFIX,
-                    saveAudioFilePath.toString(), agentId, contactId, RECORDINGS_PUBLIC_READ_ACL, getAWSCredentials());
-
-            String transcriptJobName = contactId + "_" + unixTime;
-
-            if (transcribeEnabled) {
-                contactVoicemailRepo.createRecord(unixTime, agentId, true, "IN_PROGRESS", encryptionEnabled, uploadInfo);
-                transcribeService.transcribeMediaUrl(uploadInfo.getResourceUrl(), transcriptJobName, languageCode);
-            } else {
-                contactVoicemailRepo.createRecord(unixTime, agentId, false, null, encryptionEnabled, uploadInfo);
-            }
+        if ((new File(saveAudioFilePath.toString())).length() > 0L) {
+            AudioUtils.uploadRawAudio(REGION, RECORDINGS_BUCKET_NAME, RECORDINGS_KEY_PREFIX,
+                    saveAudioFilePath.toString(), contactId, RECORDINGS_PUBLIC_READ_ACL, getAWSCredentials());
         } else {
-            logger.info("Skipping upload to S3.  saveCallRecording was disabled or audio file has 0 bytes: " + saveAudioFilePath);
+            logger.info("Skipping upload to S3: audio file has 0 bytes: " + saveAudioFilePath);
         }
     }
 

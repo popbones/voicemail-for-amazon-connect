@@ -34,8 +34,6 @@ import java.util.List;
 public class KVSProcessRecordingLambda implements RequestHandler<KinesisEvent, String> {
 
     private static final Regions REGION = Regions.fromName(System.getenv("APP_REGION"));
-    private static final Regions TRANSCRIBE_REGION = Regions.fromName(System.getenv("TRANSCRIBE_REGION"));
-    private static final boolean logRecordsFlag = Boolean.parseBoolean(System.getenv("LOG_RECORDS_FLAG"));
     private static final Logger logger = LoggerFactory.getLogger(KVSProcessRecordingLambda.class);
 
     @Override
@@ -46,7 +44,8 @@ public class KVSProcessRecordingLambda implements RequestHandler<KinesisEvent, S
             try {
                 String recordData = new String(record.getKinesis().getData().array());
                 System.out.println("Record Data: " + recordData);
-                this.processData(recordData);
+                boolean processedRecordings = this.processData(recordData);
+                System.out.println("Processed Recordings: " + processedRecordings);
             } catch (Exception e) {
                 // if json does not contain required data, will exit early
                 System.out.println(e.toString());
@@ -66,39 +65,13 @@ public class KVSProcessRecordingLambda implements RequestHandler<KinesisEvent, S
         }
 
         KVStreamRecordingData recording = recordings.get(0);
-        // Begin processing audio stream
-        TranscribeService transcribeService = new TranscribeService(TRANSCRIBE_REGION);
-        AmazonDynamoDBClientBuilder builder = AmazonDynamoDBClientBuilder.standard();
-        ContactVoicemailRepo contactVoicemailRepo = new ContactVoicemailRepo(
-                traceRecord.getContactId(),
-                traceRecord.getCustomerEndpoint().getAddress(),
-                new DynamoDB(builder.build()),
-                logRecordsFlag
-        );
+        AudioStreamService streamingService = new AudioStreamService();
 
-        AudioStreamService streamingService = new AudioStreamService(transcribeService, contactVoicemailRepo);
         try {
-            streamingService.processAudioStream(
-                    recording.getLocation(),
-                    recording.getFragmentStartNumber(),
-                    traceRecord.getAttributes().getAgentId(),
-                    traceRecord.getAttributes().getAgentName(),
-                    traceRecord.getContactId(),
-                    traceRecord.getAttributes().isTranscribeVoicemail(),
-                    traceRecord.getAttributes().isEncryptVoicemail(),
-                    traceRecord.getAttributes().getLanguageCode(),
-                    traceRecord.getAttributes().getSaveCallRecording()
-            );
-            MetricsUtil.sendMetrics("ProcessVoicemail", "Success", "", 
-                traceRecord.getAttributes().isTranscribeVoicemail(),
-                traceRecord.getAttributes().isEncryptVoicemail(),
-                traceRecord.getAttributes().getLanguageCode().orElse(""));
+            streamingService.processAudioStream(recording.getLocation(), recording.getFragmentStartNumber(),
+                    traceRecord.getContactId());
             return true;
         } catch (Exception e) {
-            MetricsUtil.sendMetrics("ProcessVoicemail", "Failure", e.getMessage(),
-                traceRecord.getAttributes().isTranscribeVoicemail(),
-                traceRecord.getAttributes().isEncryptVoicemail(),
-                traceRecord.getAttributes().getLanguageCode().orElse(""));
             logger.error("KVS to Transcribe Streaming failed with: ", e);
             return false;
         }

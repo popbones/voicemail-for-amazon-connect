@@ -24,14 +24,12 @@ public class ContactTraceRecord {
     private String awsAccountId;
     private String contactId;
     private CustomerEndpoint customerEndpoint;
-    private ContactFlowAttributes attributes;
     private List<KVStreamRecordingData> recordings = new ArrayList<>();
 
     public ContactTraceRecord(JSONObject jsonObject) {
         this.awsAccountId = jsonObject.getString("AWSAccountId");
         this.contactId = jsonObject.getString("ContactId");
         this.customerEndpoint =  new CustomerEndpoint(jsonObject.getJSONObject("CustomerEndpoint"));
-        this.attributes = new ContactFlowAttributes(jsonObject.getJSONObject("Attributes"));
         JSONArray recordings = jsonObject.getJSONArray("Recordings");
         for (int i = 0; i < recordings.length(); i++) {
             this.recordings.add(new KVStreamRecordingData(recordings.getJSONObject(i)));
@@ -48,10 +46,6 @@ public class ContactTraceRecord {
 
     public String getAwsAccountId() {
         return awsAccountId;
-    }
-
-    public ContactFlowAttributes getAttributes() {
-        return attributes;
     }
 
     public String getContactId() {

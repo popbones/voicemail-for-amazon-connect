@@ -79,7 +79,7 @@ public final class AudioUtils {
      * @param awsCredentials
      */
     public static S3UploadInfo uploadRawAudio(Regions region, String bucketName, String keyPrefix, String audioFilePath,
-                                              String agentId, String contactId, boolean publicReadAcl,
+                                              String contactId, boolean publicReadAcl,
                                               AWSCredentialsProvider awsCredentials) {
         File wavFile = null;
         S3UploadInfo uploadInfo = null;
@@ -101,7 +101,6 @@ public final class AudioUtils {
             ObjectMetadata metadata = new ObjectMetadata();
             metadata.setContentType("audio/wav");
             metadata.addUserMetadata("contact-id", contactId);
-            metadata.addUserMetadata("agent-id", agentId);
             request.setMetadata(metadata);
 
             if (publicReadAcl) {
